@@ -171,9 +171,12 @@ class FrontendTests(unittest.TestCase):
 
     def test_pythonw_missing_output_streams_preserve_exit_status(self):
         with patch.object(sys, "stdout", None), patch.object(sys, "stderr", None):
-            with self.assertRaises(SystemExit) as stopped:
-                cli.main(["--help"])
-            self.assertEqual(stopped.exception.code, 0)
+            for arguments, expected in [(["--help"], 0), (["cleanup", "--help"], 0),
+                                        (["--version"], 0), (["--未知参数"], 2)]:
+                with self.subTest(arguments=arguments):
+                    with self.assertRaises(SystemExit) as stopped:
+                        cli.main(arguments)
+                    self.assertEqual(stopped.exception.code, expected)
             self.assertEqual(cli.main(["cleanup", "--remove"]), 1)
 
 

@@ -10,6 +10,15 @@ from . import local_catalog, remote_client
 from .presentation import local_details, remote_details, remote_result, safe_text
 
 
+class ConsoleArgumentParser(argparse.ArgumentParser):
+    def _print_message(self, message, file=None):
+        # Python 3.10 argparse assumes an output stream exists. pythonw may
+        # provide neither stream; keep parsing and exit codes usable there.
+        target = file if file is not None else sys.stderr
+        if target is not None:
+            super()._print_message(message, target)
+
+
 def configure_output():
     """Use UTF-8 for terminals and pipes without replacing host-owned streams."""
     for stream in (sys.stdout, sys.stderr):
@@ -27,7 +36,7 @@ def configure_output():
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Codex 会话维护工具（非官方）")
+    root = ConsoleArgumentParser(description="Codex 会话维护工具（非官方）")
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="command")
     commands.add_parser("gui", help="启动两个页签的统一界面")
