@@ -83,6 +83,8 @@ python -m codex_session_tools cleanup --host-id "实际主机编号" --thread-id
 
 也可调用 `Cleanup-Codex.cmd` 并附加同样参数。没有批量删除或跳过确认的选项；管道输入不能代替人工确认。
 
+Python CLI 的标准输出和错误输出使用 UTF-8，便于在不同 Windows 语言环境下显示中文，并将结果重定向到文件或管道。
+
 ### 远端 Python CLI
 
 ```powershell

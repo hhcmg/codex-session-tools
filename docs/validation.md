@@ -4,8 +4,8 @@
 
 | 环境 | 结果 | 跳过原因 |
 | --- | --- | --- |
-| Windows / Python 3.13 | 118 项，97 通过、21 跳过，零失败 | 21 项 Linux 专用文件锁与进程验证 |
-| WSL Ubuntu 24.04 / Python 3.12.3 | 107 项，99 通过、8 跳过，零失败 | 未安装 Tkinter，整个 GUI 模块作为一项跳过；7 项 Windows PowerShell 测试跳过 |
+| Windows / Python 3.13 | 123 项，102 通过、21 跳过，零失败 | 21 项 Linux 专用文件锁与进程验证 |
+| WSL Ubuntu 24.04 / Python 3.12.3 | 113 项，104 通过、9 跳过，零失败 | 未安装 Tkinter，整个 GUI 模块作为一项跳过；8 项 Windows PowerShell 测试跳过 |
 
 Windows 覆盖两个 GUI 页签、确认与取消、后台任务、小窗口布局、过期选择、刷新失败、Python CLI 及 PowerShell 启动器。Linux 实际运行临时文件锁和 `/proc` 相关测试，所有终止信号调用均模拟。
 

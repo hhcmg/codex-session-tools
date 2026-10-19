@@ -1,12 +1,19 @@
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
 import io
+import json
+import os
 from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from codex_session_tools import cli
 from codex_session_tools.presentation import display_time, remote_result, safe_text
+from tests.fixtures import make_database
 
 
 ROW = {"host_id": "demo-host", "thread_id": "00000000-0000-0000-0000-000000000001",
@@ -99,6 +106,75 @@ class FrontendTests(unittest.TestCase):
             self.assertEqual(remote_result({"status": value})[1], 2)
         self.assertEqual(remote_result({"status": "unlocked", "history_unchanged": False})[1], 3)
         self.assertIn("历史发生变化", remote_result({"status": "still_locked", "history_unchanged": False})[0])
+
+    def run_legacy_encoding_cli(self, args, *, console_entry=False):
+        environment = os.environ.copy()
+        environment.update(PYTHONIOENCODING="cp1252:strict", PYTHONUTF8="0")
+        entry = (["-c", "from codex_session_tools.cli import main; raise SystemExit(main())"]
+                 if console_entry else ["-m", "codex_session_tools"])
+        return subprocess.run([sys.executable, *entry, *args], env=environment,
+                              cwd=Path(__file__).resolve().parents[1],
+                              capture_output=True, timeout=20)
+
+    def test_help_is_utf8_before_argparse_for_module_and_console_entry(self):
+        # Capture bytes: letting subprocess decode with the host's encoding could
+        # hide the Windows pipe failure or turn this into a decoding-only test.
+        for console_entry in (False, True):
+            with self.subTest(console_entry=console_entry):
+                result = self.run_legacy_encoding_cli(["--help"], console_entry=console_entry)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Codex 会话维护工具", result.stdout.decode("utf-8"))
+                self.assertEqual(result.stderr, b"")
+
+    def test_argparse_and_operation_errors_use_utf8_stderr(self):
+        for arguments, code, expected in [
+            (["--未知参数"], 2, "--未知参数"),
+            (["cleanup", "--remove"], 1, "移除需要同时提供"),
+        ]:
+            with self.subTest(arguments=arguments):
+                result = self.run_legacy_encoding_cli(arguments)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertIn(expected, result.stderr.decode("utf-8"))
+                self.assertNotIn(b"Traceback", result.stderr)
+                self.assertEqual(result.stdout, b"")
+
+    def test_chinese_catalog_json_roundtrips_with_legacy_pipe_encoding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = make_database(Path(directory) / "synthetic.db")
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute("UPDATE local_thread_catalog SET display_title=? WHERE host_id=?",
+                                   ("中文会话与符号 🧪", "cloud-a"))
+                connection.commit()
+            finally:
+                connection.close()
+            result = self.run_legacy_encoding_cli(["cleanup", "--db", str(database), "--json"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = json.loads(result.stdout.decode("utf-8"))
+        self.assertEqual(next(row["display_title"] for row in rows if row["host_id"] == "cloud-a"),
+                         "中文会话与符号 🧪")
+        self.assertEqual(result.stderr, b"")
+
+    def test_custom_text_capture_is_preserved_when_reconfigure_is_unsupported(self):
+        class CapturedText(io.StringIO):
+            def reconfigure(self, **kwargs):
+                raise io.UnsupportedOperation("This capture already accepts Unicode text")
+
+        out, err = CapturedText(), CapturedText()
+        with redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(cli.main(["cleanup", "--remove"]), 1)
+            self.assertIs(sys.stdout, out)
+            self.assertIs(sys.stderr, err)
+        self.assertIn("移除需要同时提供", err.getvalue())
+        self.assertFalse(out.closed)
+        self.assertFalse(err.closed)
+
+    def test_pythonw_missing_output_streams_preserve_exit_status(self):
+        with patch.object(sys, "stdout", None), patch.object(sys, "stderr", None):
+            with self.assertRaises(SystemExit) as stopped:
+                cli.main(["--help"])
+            self.assertEqual(stopped.exception.code, 0)
+            self.assertEqual(cli.main(["cleanup", "--remove"]), 1)
 
 
 if __name__ == "__main__":

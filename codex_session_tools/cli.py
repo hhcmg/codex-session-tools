@@ -10,6 +10,22 @@ from . import local_catalog, remote_client
 from .presentation import local_details, remote_details, remote_result, safe_text
 
 
+def configure_output():
+    """Use UTF-8 for terminals and pipes without replacing host-owned streams."""
+    for stream in (sys.stdout, sys.stderr):
+        # pythonw can provide None; embeddings and test capture often use StringIO.
+        # Neither has a byte encoding to change. Rewrapping .buffer would also
+        # bypass capture and risk closing the original stream when collected.
+        try:
+            reconfigure = getattr(stream, "reconfigure", None)
+            if callable(reconfigure):
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, OSError, TypeError, ValueError):
+            # A custom stream may expose but not implement reconfiguration.
+            # Preserve its text handling instead of assuming it has a .buffer.
+            pass
+
+
 def parser():
     root = argparse.ArgumentParser(description="Codex 会话维护工具（非官方）")
     root.add_argument("--version", action="version", version=__version__)
@@ -102,6 +118,7 @@ def unlock_command(args):
 
 
 def main(argv=None):
+    configure_output()
     args = parser().parse_args(argv)
     try:
         if args.command in (None, "gui"):
