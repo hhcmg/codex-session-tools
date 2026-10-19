@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-session-tools"
+version = "0.1.0"
+description = "Codex 会话维护工具：本地残留会话清理与远端写锁诊断"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Codex Session Tools contributors"}]
+dependencies = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.scripts]
+codex-session-tools = "codex_session_tools.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_session_tools*"]
+exclude = ["tests*"]

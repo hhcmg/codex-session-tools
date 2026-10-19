@@ -1,0 +1,54 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test on Windows
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s tests -v
+      - name: Test on Linux with a virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tests -v
+      - name: Check command line help
+        run: python -m codex_session_tools --help
+      - name: Install package and check console entry point
+        run: |
+          python -m pip install --no-deps .
+          codex-session-tools --version
+      - name: Check Windows PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $failed = $false
+          Get-ChildItem -LiteralPath . -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
