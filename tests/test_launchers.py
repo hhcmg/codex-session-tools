@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -98,6 +99,90 @@ Write-Output ('TEST_RESULT:' + ($PSVersionTable.PSVersion.Major | ConvertTo-Json
             process = self.run_ps(script)
             self.assertEqual(process.returncode, 7, process.stdout + process.stderr)
             self.assertEqual(json.loads(process.stdout), arguments)
+
+    def test_launcher_resolves_py_selected_interpreter_before_forwarding(self):
+        # CPython's Windows launcher consumes -3 from the raw command line only
+        # when it is unquoted (PC/launcher2.c, parseCommandLine). A real executable
+        # shim reproduces that distinction even on machines without py.exe.
+        scratch = ROOT / ".test-temp"
+        scratch.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="launcher-py-", dir=scratch) as directory:
+            root = Path(directory).resolve()
+            self.assertEqual(root.parent, scratch.resolve())
+            shutil.copyfile(ROOT / "launch.ps1", root / "launch.ps1")
+            package = root / "codex_session_tools"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            (package / "__main__.py").write_text(
+                "import json, sys; print(json.dumps({'argv': sys.argv[1:], 'executable': sys.executable}, "
+                "ensure_ascii=False)); sys.exit(7)", encoding="utf-8",
+            )
+            shim_dir = root / "模拟 launcher with spaces"
+            shim_dir.mkdir()
+            shim = shim_dir / "py.exe"
+            source = root / "LauncherShim.cs"
+            source.write_text(r'''
+using System;
+using System.Diagnostics;
+using System.IO;
+public static class LauncherShim {
+    public static int Main(string[] args) {
+        string raw = Environment.CommandLine;
+        int offset = raw[0] == '"' ? raw.IndexOf('"', 1) + 1 : raw.IndexOf(' ');
+        if (offset < 0) offset = raw.Length;
+        string tail = raw.Substring(offset).TrimStart();
+        File.AppendAllText(Environment.GetEnvironmentVariable("CODEX_TEST_PY_LOG"), tail + "\n");
+        if (!tail.StartsWith("-3 ", StringComparison.Ordinal)) {
+            Console.Error.WriteLine("Unknown option: -3 (quoted launcher selector)");
+            return 2;
+        }
+        ProcessStartInfo info = new ProcessStartInfo(
+            Environment.GetEnvironmentVariable("CODEX_TEST_PYTHON"), tail.Substring(3));
+        info.UseShellExecute = false;
+        info.CreateNoWindow = true;
+        info.RedirectStandardOutput = true;
+        info.RedirectStandardError = true;
+        using (Process child = Process.Start(info)) {
+            string output = child.StandardOutput.ReadToEnd();
+            string error = child.StandardError.ReadToEnd();
+            child.WaitForExit();
+            Console.Out.Write(output);
+            Console.Error.Write(error);
+            return child.ExitCode;
+        }
+    }
+}
+''', encoding="utf-8")
+            log = root / "launcher-calls.txt"
+            arguments = ["cleanup", "--query", "中文 \"quote\" & $(noop) \\", "", "tail\\\\"]
+            script = "\n".join([
+                "$env:CODEX_TEST_PYTHON=" + ps_literal(sys.executable),
+                "$env:CODEX_TEST_PY_LOG=" + ps_literal(log),
+                "$env:CODEX_TEST_PY_SHIM=" + ps_literal(shim),
+                "Add-Type -TypeDefinition ([IO.File]::ReadAllText(" + ps_literal(source)
+                + ")) -Language CSharp -OutputAssembly $env:CODEX_TEST_PY_SHIM -OutputType ConsoleApplication",
+                # First prove the shim reproduces the raw quoted-selector failure.
+                "$bad=[Diagnostics.ProcessStartInfo]::new($env:CODEX_TEST_PY_SHIM, '\"-3\" -c pass')",
+                "$bad.UseShellExecute=$false; $bad.RedirectStandardError=$true; $bad.CreateNoWindow=$true",
+                "$check=[Diagnostics.Process]::Start($bad); $errorText=$check.StandardError.ReadToEnd(); $check.WaitForExit()",
+                "if ($check.ExitCode -ne 2 -or $errorText -notlike '*Unknown option: -3*') { throw 'Shim did not reproduce quoted-selector failure' }; $check.Dispose()",
+                "function Get-Command([string]$Name, $CommandType, $ErrorAction) {",
+                "    if ($Name -eq 'py.exe') { return [pscustomobject]@{Source=$env:CODEX_TEST_PY_SHIM} }",
+                "    throw 'Unexpected interpreter fallback'",
+                "}",
+                "$forwardArgs=@(" + ",".join(map(ps_literal, arguments)) + ")",
+                "& " + ps_literal(root / "launch.ps1") + " @forwardArgs; exit $LASTEXITCODE",
+            ])
+            process = self.run_ps(script)
+            self.assertEqual(process.returncode, 7, process.stdout + process.stderr +
+                             (log.read_text(encoding="utf-8-sig") if log.exists() else "No launcher log"))
+            result = json.loads(process.stdout)
+            self.assertEqual(result["argv"], arguments)
+            self.assertEqual(Path(result["executable"]).resolve(), Path(sys.executable).resolve())
+            calls = log.read_text(encoding="utf-8-sig").splitlines()
+            self.assertEqual(len(calls), 2, calls)  # Failure demonstration, then one discovery probe.
+            self.assertTrue(calls[0].startswith('"-3" '), calls)
+            self.assertTrue(calls[1].startswith("-3 -c "), calls)
 
     def test_deep_links_normalize_and_reject_invalid_paths(self):
         valid = [THREAD_ID, THREAD_ID.upper(), "codex://threads/" + THREAD_ID,

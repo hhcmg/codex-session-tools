@@ -29,6 +29,11 @@ classifiers = [
 [project.scripts]
 codex-session-tools = "codex_session_tools.cli:main"
 
+[project.urls]
+Repository = "https://github.com/hhcmg/codex-session-tools"
+Issues = "https://github.com/hhcmg/codex-session-tools/issues"
+Changelog = "https://github.com/hhcmg/codex-session-tools/blob/main/CHANGELOG.md"
+
 [tool.setuptools.packages.find]
 include = ["codex_session_tools*"]
 exclude = ["tests*"]

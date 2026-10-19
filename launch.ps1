@@ -33,16 +33,24 @@ try {
         # Avoid invoking the Microsoft Store placeholder when Python is absent.
         if ($command.Source -like '*\Microsoft\WindowsApps\python*.exe') { continue }
         try {
-            $probe = @($candidate.Prefix) + @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)')
-            & $command.Source @probe 2>$null | Out-Null
+            # Resolve the interpreter chosen by py.exe. Its raw command-line parser
+            # does not consume a quoted "-3", so do not reuse it for the final launch.
+            # Base64 keeps interpreter paths intact across console code pages.
+            $probe = @($candidate.Prefix) + @('-c', 'import base64,sys; sys.exit(1) if sys.version_info < (3, 10) else None; print(''CODEX_PYTHON:'' + base64.b64encode(sys.executable.encode(''utf-8'')).decode(''ascii''))')
+            $probeOutput = @(& $command.Source @probe 2>$null)
             if ($LASTEXITCODE -ne 0) { continue }
+            $identityLines = @($probeOutput | Where-Object { $_ -is [string] -and $_.StartsWith('CODEX_PYTHON:') })
+            if ($identityLines.Count -ne 1) { continue }
+            $interpreterPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($identityLines[0].Substring('CODEX_PYTHON:'.Length)))
+            if (-not [System.IO.Path]::IsPathRooted($interpreterPath) -or
+                -not (Test-Path -LiteralPath $interpreterPath -PathType Leaf)) { continue }
             $versionFound = $true
             if ($needGui) {
-                $probe = @($candidate.Prefix) + @('-c', 'import tkinter as tk; root = tk.Tk(); root.withdraw(); root.destroy()')
-                & $command.Source @probe 2>$null | Out-Null
+                $probe = @('-c', 'import tkinter as tk; root = tk.Tk(); root.withdraw(); root.destroy()')
+                & $interpreterPath @probe 2>$null | Out-Null
                 if ($LASTEXITCODE -ne 0) { continue }
             }
-            $selected = @{ Command = $command.Source; Prefix = @($candidate.Prefix) }
+            $selected = $interpreterPath
             break
         } catch {
             continue
@@ -57,9 +65,9 @@ try {
     Push-Location -LiteralPath $PSScriptRoot
     try {
         # Do not pass user arguments through a shell or Invoke-Expression.
-        $nativeArgs = @($selected.Prefix) + @('-X', 'utf8', '-m', 'codex_session_tools') + @($ToolArguments)
+        $nativeArgs = @('-X', 'utf8', '-m', 'codex_session_tools') + @($ToolArguments)
         $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $startInfo.FileName = $selected.Command
+        $startInfo.FileName = $selected
         $startInfo.Arguments = ($nativeArgs | ForEach-Object { Quote-NativeArgument $_ }) -join ' '
         $startInfo.WorkingDirectory = $PSScriptRoot
         $startInfo.UseShellExecute = $false

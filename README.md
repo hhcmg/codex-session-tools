@@ -1,5 +1,7 @@
 # Codex 会话维护工具
 
+[![Tests](https://github.com/hhcmg/codex-session-tools/actions/workflows/tests.yml/badge.svg)](https://github.com/hhcmg/codex-session-tools/actions/workflows/tests.yml)
+
 一个面向 Windows 的轻量桌面工具，集中处理 **Codex 中的 ChatGPT 残留目录记录**和 **Linux 远端 Codex 会话写锁**。提供两个页签的统一 GUI，并保留独立命令行入口。
 
 **非官方工具，当前为 `0.1.0` 预览版。** 它依赖 Codex 的内部数据库与文件布局；结构检查通过不代表所有应用版本均已验证。没有后台服务、遥测或自动修复任务。
@@ -136,7 +138,7 @@ python -m unittest discover -s tests -v
 
 测试使用临时数据库、虚构会话和模拟 SSH；Linux 用例还检查临时真实文件锁，所有终止信号均模拟。没有测试会终止真实 Codex 后端。GUI 测试需要图形桌面；Linux 可使用 `xvfb-run -a python -m unittest discover -s tests -v`。
 
-GitHub Actions 已配置 Windows / Ubuntu × Python 3.10 / 3.13；运行结果需在仓库上传后查看，不能将本地测试视作 GitHub CI 已通过。[验证与发布说明](docs/testing-and-release.md)
+GitHub Actions 检查 Windows / Ubuntu × Python 3.10 / 3.13，包含测试、包安装和命令行入口验证。[查看最新 CI 结果](https://github.com/hhcmg/codex-session-tools/actions/workflows/tests.yml) · [验证与发布说明](docs/testing-and-release.md)
 
 ## 故障排查
 
